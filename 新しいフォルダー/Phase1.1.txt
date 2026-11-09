@@ -1,0 +1,436 @@
+以下が EGP v2.0 Enterprise / Phase 1 Complete の推奨構成です。
+
+この段階の目標は、
+
+✅ 全ドメインモデル完成
+✅ JSON Schema生成可能
+✅ FastAPI互換
+✅ LangGraph互換
+✅ SQLAlchemy実装準備完了
+✅ Event Sourcing準備完了
+✅ MCP通信準備完了
+
+
+です。
+
+ディレクトリ構成
+erios-egp/
+
+├ pyproject.toml
+├ README.md
+│
+├ src/
+│   └ erios_egp/
+│
+│       ├ __init__.py
+│
+│       ├ core/
+│       │   ├ __init__.py
+│       │   ├ base.py
+│       │   ├ enums.py
+│       │   ├ constants.py
+│       │   ├ exceptions.py
+│       │   └ types.py
+│
+│       ├ governance/
+│       │   ├ __init__.py
+│       │   ├ tree_state.py
+│       │   ├ layer.py
+│       │   ├ route.py
+│       │   ├ policy.py
+│       │   ├ provenance.py
+│       │   └ envelope.py
+│
+│       ├ verification/
+│       │   ├ __init__.py
+│       │   └ models.py
+│
+│       ├ registry/
+│       │   ├ __init__.py
+│       │   ├ fruit.py
+│       │   └ rework.py
+│
+│       ├ telemetry/
+│       │   ├ __init__.py
+│       │   ├ trace.py
+│       │   └ metrics.py
+│
+│       ├ federation/
+│       │   ├ __init__.py
+│       │   ├ agent.py
+│       │   └ mcp.py
+│
+│       ├ runtime/
+│       │   ├ __init__.py
+│       │   └ state.py
+│
+│       ├ events/
+│       │   ├ __init__.py
+│       │   └ models.py
+│
+│       └ schemas/
+│           └ export.py
+│
+└ tests/
+
+governance/provenance.py
+from datetime import datetime
+from datetime import UTC
+
+from pydantic import Field
+
+from erios_egp.core.base import EGPBaseModel
+from erios_egp.core.enums import Layer
+
+
+class Checksum(EGPBaseModel):
+
+    algorithm: str = "sha256"
+
+    value: str
+
+
+class Provenance(EGPBaseModel):
+
+    source_id: str
+
+    source_type: str
+
+    source_layer: Layer
+
+    source_uri: str
+
+    checksum: Checksum
+
+    trusted: bool = True
+
+    retrieved_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC)
+    )
+
+
+class KnowledgeChainEntry(EGPBaseModel):
+
+    source: str
+
+    identifier: str
+
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(UTC)
+    )
+
+
+class ProvenanceChain(EGPBaseModel):
+
+    entries: list[KnowledgeChainEntry] = Field(
+        default_factory=list
+    )
+
+federation/agent.py
+from pydantic import Field
+
+from erios_egp.core.base import EGPBaseModel
+
+
+class AgentCapability(EGPBaseModel):
+
+    name: str
+
+    description: str | None = None
+
+
+class AgentDescriptor(EGPBaseModel):
+
+    agent_id: str
+
+    agent_type: str
+
+    capabilities: list[AgentCapability] = Field(
+        default_factory=list
+    )
+
+    required_policies: list[str] = Field(
+        default_factory=list
+    )
+
+    required_verifications: list[str] = Field(
+        default_factory=list
+    )
+
+    active: bool = True
+
+federation/mcp.py
+from typing import Any
+
+from pydantic import Field
+
+from erios_egp.core.base import EGPBaseModel
+
+
+class MCPMetadata(EGPBaseModel):
+
+    protocol: str = "mcp"
+
+    version: str = "1.0"
+
+
+class MCPEnvelope(EGPBaseModel):
+
+    metadata: MCPMetadata = Field(
+        default_factory=MCPMetadata
+    )
+
+    sender: str
+
+    receiver: str
+
+    message_type: str
+
+    trace_id: str
+
+    payload: dict[str, Any] = Field(
+        default_factory=dict
+    )
+
+core/constants.py
+PROTOCOL_NAME = "EGP"
+
+PROTOCOL_VERSION = "2.0"
+
+DEFAULT_HASH_ALGORITHM = "sha256"
+
+DEFAULT_MIN_FRUIT_LEVEL = "F3"
+
+core/exceptions.py
+class EGPException(Exception):
+    pass
+
+
+class PolicyViolationError(EGPException):
+    pass
+
+
+class VerificationError(EGPException):
+    pass
+
+
+class StateTransitionError(EGPException):
+    pass
+
+
+class ProvenanceError(EGPException):
+    pass
+
+core/types.py
+from typing import NewType
+
+TraceId = NewType(
+    "TraceId",
+    str
+)
+
+FruitId = NewType(
+    "FruitId",
+    str
+)
+
+RouteId = NewType(
+    "RouteId",
+    str
+)
+
+telemetry/metrics.py
+from erios_egp.core.base import EGPBaseModel
+
+
+class GovernanceMetrics(EGPBaseModel):
+
+    success_rate: float = 0.0
+
+    verification_rate: float = 0.0
+
+    promotion_rate: float = 0.0
+
+    rework_rate: float = 0.0
+
+runtime/state.py
+from erios_egp.core.base import EGPBaseModel
+
+from erios_egp.governance.tree_state import TreeState
+from erios_egp.governance.layer import LayerClassification
+from erios_egp.governance.route import RouteClassification
+
+from erios_egp.registry.fruit import Fruit
+
+from erios_egp.verification.models import (
+    VerificationCore
+)
+
+
+class RuntimeState(EGPBaseModel):
+
+    workflow_id: str
+
+    current_node: str | None = None
+
+    tree_state: TreeState
+
+    layers: LayerClassification
+
+    routes: RouteClassification
+
+    verification: (
+        VerificationCore | None
+    ) = None
+
+    fruit: Fruit | None = None
+
+events/models.py
+from datetime import datetime
+from datetime import UTC
+
+from pydantic import Field
+
+from erios_egp.core.base import (
+    ResourceModel
+)
+
+
+class DomainEvent(ResourceModel):
+
+    event_type: str
+
+    aggregate_id: str
+
+    payload: dict = Field(
+        default_factory=dict
+    )
+
+    occurred_at: datetime = Field(
+        default_factory=lambda:
+        datetime.now(UTC)
+    )
+
+governance/envelope.py
+from erios_egp.core.base import EGPBaseModel
+
+from erios_egp.telemetry.trace import (
+    TraceContext
+)
+
+from erios_egp.governance.tree_state import (
+    TreeState
+)
+
+from erios_egp.governance.policy import (
+    Policy
+)
+
+from erios_egp.governance.layer import (
+    LayerClassification
+)
+
+from erios_egp.governance.route import (
+    RouteClassification
+)
+
+from erios_egp.governance.provenance import (
+    Provenance
+)
+
+from erios_egp.verification.models import (
+    VerificationCore
+)
+
+
+class EGPEnvelope(EGPBaseModel):
+
+    protocol_name: str = "EGP"
+
+    protocol_version: str = "2.0"
+
+    trace: TraceContext
+
+    policy: Policy
+
+    tree_state: TreeState
+
+    layers: LayerClassification
+
+    routes: RouteClassification
+
+    provenance: Provenance
+
+    verification: VerificationCore
+
+schemas/export.py
+from pathlib import Path
+
+from erios_egp.governance.envelope import (
+    EGPEnvelope
+)
+
+
+def export_schema():
+
+    schema = EGPEnvelope.model_json_schema()
+
+    target = Path(
+        "egp.schema.json"
+    )
+
+    target.write_text(
+        __import__("json").dumps(
+            schema,
+            indent=2,
+            ensure_ascii=False
+        ),
+        encoding="utf-8"
+    )
+
+    return target
+
+src/erios_egp/init.py
+from erios_egp.governance.envelope import (
+    EGPEnvelope
+)
+
+__all__ = [
+    "EGPEnvelope"
+]
+
+Phase 1 完了基準
+✅ Pydantic v2 Strict Mode
+
+✅ TreeState
+
+✅ LayerClassification
+
+✅ RouteClassification
+
+✅ Policy
+
+✅ Provenance
+
+✅ VerificationCore
+
+✅ Fruit
+
+✅ Rework
+
+✅ TraceContext
+
+✅ RuntimeState
+
+✅ DomainEvent
+
+✅ MCPEnvelope
+
+✅ AgentDescriptor
+
+✅ JSON Schema Export
+
+✅ パッケージ構造確定
+
+
+この状態で Phase 2（State Machine） に進み、RouteStateMachine、FruitStateMachine、PromotionRuleEngine を実装するのが次のステップになります。
